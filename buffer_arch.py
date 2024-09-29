@@ -16,15 +16,15 @@ def get_min_trans_mode_1(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
     model = ConcreteModel()
 
     ############# value for MAC layout #################
-    model.mac_rate_x           = Var(domain=PositiveIntegers, initialize=5,   bounds=(5, 8))
-    model.mac_rate_y           = Var(domain=PositiveIntegers, initialize=5,   bounds=(5, 8))
+    model.mac_rate_x           = Var(domain=PositiveIntegers, initialize=5,   bounds=(5, 9))
+    model.mac_rate_y           = Var(domain=PositiveIntegers, initialize=5,   bounds=(5, 9))
     model.mac_x                = Var(domain=PositiveIntegers, initialize=128, bounds=(32, 512))
     model.mac_y                = Var(domain=PositiveIntegers, initialize=128, bounds=(32, 512))
     model.mac_c                = Var(domain=PositiveIntegers, initialize=1,   bounds=(1, 512))
 
     ############# constraints for MAC layout #################
-    model.cons_mac_x           = Constraint(expr= model.mac_x == 2**model.mac_rate_x) ## max_x = {32, 64, 128, 512}
-    model.cons_mac_y           = Constraint(expr= model.mac_y == 2**model.mac_rate_y) ## max_y = {32, 64, 128, 512}
+    model.cons_mac_x           = Constraint(expr= model.mac_x == 2**model.mac_rate_x) ## max_x = {32, 64, 128, 256, 512}
+    model.cons_mac_y           = Constraint(expr= model.mac_y == 2**model.mac_rate_y) ## max_y = {32, 64, 128, 256, 512}
     model.cons_mac_xyc         = Constraint(expr= model.mac_x*model.mac_y*model.mac_c == 128*128)
 
 
@@ -95,7 +95,7 @@ def get_min_trans_mode_1(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
     model.cons_xc_rate_int2     = Constraint(expr= model.xc_rate_int <= C/model.xc +1)
     model.cons_yc_rate_int2     = Constraint(expr= model.yc_rate_int <= C/model.yc +1)
 
-    model.cons_psum_1           = Constraint(expr= model.x_block*model.y_block <= (C/(C-model.xc+0.0000001))*model.reg_inmac)
+    model.cons_psum_1           = Constraint(expr= model.x_block*model.y_block <= (((C-model.xc)/2+0.01)/(C-model.xc+0.0000001)+1)*model.reg_inmac)
     model.cons_psum_2           = Constraint(expr= model.x_block*model.y_block >= (C-model.xc)/C*model.reg_inmac)
 
     model.cons_datay            = Constraint(expr= (model.data_r_y >= model.x_rate_int*(Y0*C-model.buf_y)+model.buf_y))
@@ -157,7 +157,7 @@ def get_min_trans_mode_1(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
         }
         )
 
-def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, max_psum_bw=32*4, min_read_bw = 0, buffer_limit=64*1024, detail=False):
+def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, max_psum_bw=32*4, min_read_bw = 0, buffer_limit=64*1024, mode='psum', detail=False):
     TOTAL_BUFFER_SIZE = B
     model = ConcreteModel()
 
@@ -224,9 +224,11 @@ def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
     model.xc_rate_int          = Var(domain=PositiveIntegers, bounds=(1, math.ceil( C/32)), initialize=math.ceil( C/32)) 
     model.yc_rate_int          = Var(domain=PositiveIntegers, bounds=(1, math.ceil( C/32)), initialize=math.ceil( C/32)) 
 
-    model.data_r_y             = Var(domain=PositiveIntegers,    initialize=Y0*C,  bounds=(Y0*C, None))
+    model.data_r_y_1           = Var(domain=PositiveIntegers,    initialize=Y0*C,  bounds=(Y0*C, None))
+    model.data_r_y_2           = Var(domain=PositiveIntegers,    initialize=Y0*C,  bounds=(Y0*C, None))
     model.data_r_x             = Var(domain=PositiveIntegers,    initialize=X0*C,  bounds=(X0*C, None))
-    model.data_r_p             = Var(domain=NonNegativeIntegers, initialize=0,     bounds=(0, None))
+    model.data_r_p_1           = Var(domain=NonNegativeIntegers, initialize=0,     bounds=(0, None))
+    model.data_r_p_2           = Var(domain=NonNegativeIntegers, initialize=0,     bounds=(0, None))
     model.data_w_p             = Var(domain=PositiveIntegers,    initialize=X0*Y0, bounds=(X0*Y0, None))
 
     
@@ -245,8 +247,13 @@ def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
     # model.cons_psum_2           = Constraint(expr= model.x_block*model.y_block >= (C-model.xc)/C*model.reg_inmac)
 
     model.cons_detax            = Constraint(expr= (model.data_r_x == X0*C))
-    model.cons_datay            = Constraint(expr= (model.data_r_y >= model.x_rate_int*(Y0*C-model.buf_y)+model.buf_y))
-    model.cons_detap            = Constraint(expr= (model.data_r_p >= (model.xc_rate_int-1)*(X0*Y0-model.buf_psum)*4))
+    model.cons_datay_1          = Constraint(expr= (model.data_r_y_1 >= (model.x_rate_int*(model.y*C-model.buf_y)+model.buf_y)*model.y_rate_int))
+    model.cons_detap_1          = Constraint(expr= (model.data_r_p_1 >= (model.xc_rate_int-1)*(X0*Y0-X0*model.y)*4))
+
+
+    model.cons_datay_2          = Constraint(expr= (model.data_r_y_2 >= model.x_rate_int*(Y0*C-model.buf_y)+model.buf_y))
+    model.cons_detap_2          = Constraint(expr= (model.data_r_p_2 >= (model.xc_rate_int-1)*(X0*Y0-model.buf_psum)*4))
+
 
 
 
@@ -256,12 +263,12 @@ def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
     model.min_data_write        = Var(initialize=4*128*128/C)
 
     # share buffer Data Read
-    model.cons_min_data_r_1     = Constraint(expr = model.min_data_read == (model.data_r_x + model.data_r_y + model.data_r_p)*128*128/X0/Y0/C)
+    model.cons_min_data_r_1     = Constraint(expr = model.min_data_read == (model.data_r_x + model.data_r_y_1 + model.data_r_p_1)*128*128/X0/Y0/C)
     model.cons_min_data_r_2     = Constraint(expr = model.min_data_read >= min_read_bw)
     model.cons_min_data_r_3     = Constraint(expr = model.min_data_read <= max_read_bw)
     
     # share buffer Data Write
-    model.cons_min_write        = Constraint(expr = model.min_data_write == (model.data_r_p + X0*Y0*4)*128*128/X0/Y0/C)
+    model.cons_min_write        = Constraint(expr = model.min_data_write == (model.data_r_p_1 + X0*Y0*4)*128*128/X0/Y0/C)
 
     
     
@@ -279,6 +286,7 @@ def get_min_trans_mode_2(X0=1024,Y0=1024,C=256,B=64*1024, max_read_bw=10000000, 
 
 
     model.obj = Objective(expr=model.min_data_read+model.min_psum_read+model.min_data_write, sense = minimize)
+    # model.obj = Objective(expr=model.min_data_read+model.min_psum_read+model.min_data_write, sense = minimize)
 
 
     opt = SolverFactory('scip')
@@ -333,9 +341,11 @@ def get_arch_info(P=256, W=512, C=1024, Buffer = 1024, max_read_bw=512, max_psum
             X = W
             Y = P
     elif(mode_list[0] == 'pixel'):
+        mode_='pixel'
         X = P
         Y = W
     else:
+        mode_='weight'
         X = W
         Y = P
 
@@ -366,5 +376,7 @@ def get_arch_info(P=256, W=512, C=1024, Buffer = 1024, max_read_bw=512, max_psum
         Arch_param = get_min_trans_mode_2(X0=X,Y0=Y,C=C,B=Buffer*1024, min_read_bw = min_bw, max_read_bw=max_read_bw, max_psum_bw=max_psum_bw, detail=detail)
     return(Arch_param)# print(Arch_param)
 # print(min_bw)
-Arch_param = get_arch_info()
+Arch_param = get_arch_info(mode='pixel-psum-weight')
+print(Arch_param)
+Arch_param = get_arch_info(mode='psum-pixel-weight')
 print(Arch_param)
